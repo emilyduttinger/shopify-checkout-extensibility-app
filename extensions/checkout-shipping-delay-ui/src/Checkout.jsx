@@ -1,59 +1,50 @@
+import { useEffect, useState } from "react";
 import {
-  reactExtension,
-  Banner,
-  BlockStack,
-  Checkbox,
+  useCartLineTarget,
   Text,
-  useApi,
-  useApplyAttributeChange,
-  useInstructions,
-  useTranslate,
+  useAppMetafields,
+  reactExtension
 } from "@shopify/ui-extensions-react/checkout";
 
-// 1. Choose an extension target
-export default reactExtension("purchase.checkout.block.render", () => (
-  <Extension />
-));
+// Extension entry point
+export default reactExtension("purchase.checkout.cart-line-item.render-after", () => <App />)
 
-function Extension() {
-  const translate = useTranslate();
-  const { extension } = useApi();
-  const instructions = useInstructions();
-  const applyAttributeChange = useApplyAttributeChange();
+function App() {
+  // Use the merchant-defined metafield for watering instructions and map it to a cart line
+  const shippingDelayMetafields = useAppMetafields({
+    type: "product",
+    namespace: "custom",
+    key: "shipping_delay_message"
+  });
+  const cartLineTarget = useCartLineTarget();
 
+  const [shippingDelayText, setShippingDelayText] = useState("");
 
-  // 2. Check instructions for feature availability, see https://shopify.dev/docs/api/checkout-ui-extensions/apis/cart-instructions for details
-  if (!instructions.attributes.canUpdateAttributes) {
-    // For checkouts such as draft order invoices, cart attributes may not be allowed
-    // Consider rendering a fallback UI or nothing at all, if the feature is unavailable
-    return (
-      <Banner title="checkout-shipping-delay-ui" status="warning">
-        {translate("attributeChangesAreNotSupported")}
-      </Banner>
-    );
-  }
+  useEffect(() => {
+    const productId = cartLineTarget?.merchandise?.product?.id;
+    if (!productId) {
+      return;
+    }
 
-  // 3. Render a UI
-  return (
-    <BlockStack border={"dotted"} padding={"tight"}>
-      <Banner title="checkout-shipping-delay-ui">
-        {translate("welcome", {
-          target: <Text emphasis="italic">{extension.target}</Text>,
-        })}
-      </Banner>
-      <Checkbox onChange={onCheckboxChange}>
-        {translate("iWouldLikeAFreeGiftWithMyOrder")}
-      </Checkbox>
-    </BlockStack>
-  );
-
-  async function onCheckboxChange(isChecked) {
-    // 4. Call the API to modify checkout
-    const result = await applyAttributeChange({
-      key: "requestedFreeGift",
-      type: "updateAttribute",
-      value: isChecked ? "yes" : "no",
+    const shippingDelayMetafield = shippingDelayMetafields.find(({target}) => {
+      // Check if the target of the metafield is the product from our cart line
+      return `gid://shopify/Product/${target.id}` === productId;
     });
-    console.log("applyAttributeChange result", result);
+
+    // If we find the metafield, set the watering instructions for this cart line
+    if (typeof shippingDelayMetafield?.metafield?.value === "string") {
+      setShippingDelayText(shippingDelayMetafield.metafield.value);
+    }
+  }, [cartLineTarget, shippingDelayMetafields]);
+
+  // Render the watering instructions if applicable
+  if (shippingDelayText) {
+    return (
+        <Text>
+          {shippingDelayText}
+        </Text>
+      );
   }
+
+  return null;
 }
